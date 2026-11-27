@@ -1,13 +1,13 @@
 /* ============================================================================
- * DVP 摄像头（OV5640 / OV2640 自动识别）-> UART -> STM32F103CBT6 -> ILI9341
+ * DVP 摄像头（OV5640 / OV2640 自动识别）-> SPI -> STM32F103CBT6 -> ILI9341
  *
  * 模块自带 24MHz 有源晶振，排针没有 XCLK 脚，所以 ESP32 不输出 XCLK。
  * 底层用乐鑫官方 esp_video / esp_cam_sensor 组件（V4L2 风格接口），
  * 不自己写寄存器序列、不自己拼 DVP 时序。摄像头引脚在 camera_preview.h，
- * 与原来的工程完全一致，一根没动；原来接 TFT 的 43 改 UART1 TX、42 改 READY。
+ * 与原来的工程完全一致，一根没动。
  *
  * OV2640 请求 240x240 RGB565；OV5640 只给 800x600，就在 PSRAM 里
- * 居中裁剪 + 最近邻缩放到 240x240，再逐行送给 STM32。
+ * 居中裁剪 + 最近邻缩放到 240x240，再逐行通过 SPI 送给 STM32。
  * ========================================================================== */
 
 #include <string.h>
@@ -25,7 +25,7 @@
 #include "esp_video_device.h"
 #include "esp_video_init.h"
 #include "driver/gpio.h"
-#include "driver/uart.h"
+#include "driver/spi_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -82,9 +82,11 @@ static uint32_t s_cap_h;
 /* 需要缩放时用的 240x240 RGB565 中转缓冲（PSRAM） */
 static uint8_t *s_scaled;
 
-/* UART 链路 */
-#define LINK_UART_NUM     UART_NUM_1
+/* SPI 链路：一次事务发一整包（485 字节），CS 由驱动自动包住整包 */
+#define LINK_SPI_HOST     SPI2_HOST
+static spi_device_handle_t s_spi;
 static uint8_t s_tx_row[LINK_ROW_BYTES];   /* 480 字节，单行 BE 格式 */
+static uint8_t s_pkt[LINK_PKT_BYTES];      /* 485 字节整包：头 + 行像素 */
 
 /* 把 s_cap_w x s_cap_h 的 RGB565 帧居中裁剪成正方形，最近邻缩放到 240x240 */
 static void scale_frame_to_buf(const uint8_t *src)
@@ -252,8 +254,8 @@ esp_err_t camera_preview_init(void)
 }
 
 /* ----------------------------------------------------------------------------
- * UART 链路初始化：复用原来接 TFT 的 43 脚做 UART1 TX，
- * 42 原 TFT 复位脚改成 READY 输入。44/45 悬空不用。
+ * SPI 链路初始化：45=SCK, 44=MOSI, 43=CS（主机输出），42=READY 输入。
+ * 这四根就是原来 ESP32 直接刷 ILI9341 用的线，接线不用动。
  * -------------------------------------------------------------------------- */
 static esp_err_t link_init(void)
 {
@@ -266,26 +268,36 @@ static esp_err_t link_init(void)
     };
     ESP_RETURN_ON_ERROR(gpio_config(&io), TAG, "READY gpio config failed");
 
-    uart_config_t uart_cfg = {
-        .baud_rate = LINK_UART_BAUD,
-        .data_bits = UART_DATA_8_BITS,
-        .parity    = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
+    spi_bus_config_t bus = {
+        .mosi_io_num     = LINK_PIN_MOSI,
+        .miso_io_num     = -1,                  /* 单向：STM32 不回数据 */
+        .sclk_io_num     = LINK_PIN_SCK,
+        .quadwp_io_num   = -1,
+        .quadhd_io_num   = -1,
+        .max_transfer_sz = LINK_PKT_BYTES,
     };
-    ESP_RETURN_ON_ERROR(uart_driver_install(LINK_UART_NUM, 256, 0, 0, NULL, 0),
-                        TAG, "uart_driver_install failed");
-    ESP_RETURN_ON_ERROR(uart_param_config(LINK_UART_NUM, &uart_cfg),
-                        TAG, "uart_param_config failed");
-    /* TX=GPIO43；RX/CTS/RTS 不用，设成 UART_PIN_NO_CHANGE */
-    ESP_RETURN_ON_ERROR(uart_set_pin(LINK_UART_NUM, LINK_PIN_TX,
-                                      UART_PIN_NO_CHANGE,
-                                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE),
-                        TAG, "uart_set_pin failed");
+    /* 用 DMA 通道：485 字节超过 FIFO，交给 DMA 发才能把 CPU 让出来 */
+    ESP_RETURN_ON_ERROR(spi_bus_initialize(LINK_SPI_HOST, &bus, SPI_DMA_CH_AUTO),
+                        TAG, "spi_bus_initialize failed");
 
-    ESP_LOGI(TAG, "link ready: TX=%d READY=%d @%lu baud 8N1",
-             LINK_PIN_TX, LINK_PIN_READY, (unsigned long)LINK_UART_BAUD);
+    spi_device_interface_config_t dev = {
+        .clock_speed_hz = LINK_SPI_HZ,
+        .mode           = 0,                    /* CPOL=0, CPHA=0，与 STM32 从机一致 */
+        .spics_io_num   = LINK_PIN_CS,
+        .queue_size     = 1,
+        /* CS 提前 4 个位周期拉低：STM32F1 的 SPI 从机要过约 1 个 APB 时钟
+         * 才认定自己被选中，NSS 和第一个时钟沿贴太近会丢最高位。
+         * 发完再多保持 1 个位周期，避免最后一位还没采样 CS 就抬起来。 */
+        .cs_ena_pretrans  = 4,
+        .cs_ena_posttrans = 1,
+        .flags          = SPI_DEVICE_NO_DUMMY,
+    };
+    ESP_RETURN_ON_ERROR(spi_bus_add_device(LINK_SPI_HOST, &dev, &s_spi),
+                        TAG, "spi_bus_add_device failed");
+
+    ESP_LOGI(TAG, "link ready: SCK=%d MOSI=%d CS=%d READY=%d @%lu Hz mode0",
+             LINK_PIN_SCK, LINK_PIN_MOSI, LINK_PIN_CS, LINK_PIN_READY,
+             (unsigned long)LINK_SPI_HZ);
     return ESP_OK;
 }
 
@@ -304,22 +316,16 @@ static bool wait_ready(int level, int timeout_ms)
     return true;
 }
 
-/* 发一行：485 字节，双 magic + 帧号 + 行号 + 异或校验 + 480 字节像素 */
+/* 发一行：485 字节，双 magic + 帧号 + 行号 + 异或校验 + 480 字节像素。
+ * 一次 spi_device_polling_transmit 发完整包，CS 由驱动在事务前后自动拉低/拉高。 */
 static esp_err_t link_send_row(const uint8_t *rgb565_le,
                                uint8_t frame_id, uint8_t row)
 {
-    uint8_t pkt[LINK_PKT_BYTES];
     uint8_t xor = LINK_MAGIC1 ^ LINK_MAGIC2 ^ frame_id ^ row;
-    int written;
+    spi_transaction_t t;
 
-    if (!wait_ready(1, 5000)) {
-        ESP_LOGW(TAG, "timeout waiting READY=1 at row %u (check PB10->GPIO42)", row);
-        return ESP_ERR_TIMEOUT;
-    }
-    if (row <= 1) {
-        ESP_LOGI(TAG, "row %u: READY=1, sending %d bytes via UART1", row, LINK_PKT_BYTES);
-    }
-
+    /* 先把整包拼好，再去等 READY：这段约 50us 的组装时间能和
+     * STM32 写上一行屏的时间重叠，不必串行浪费。 */
     for (uint32_t i = 0; i < LINK_PIX_W; i++) {
 #if CAM_SWAP_RGB565
         /* V4L2 是低字节在前，ILI9341 要高字节在前 */
@@ -334,32 +340,41 @@ static esp_err_t link_send_row(const uint8_t *rgb565_le,
         xor ^= s_tx_row[i * 2 + 1];
     }
 
-    pkt[0] = LINK_MAGIC1;
-    pkt[1] = LINK_MAGIC2;
-    pkt[2] = frame_id;
-    pkt[3] = row;
-    pkt[4] = xor;
-    memcpy(pkt + LINK_HDR_BYTES, s_tx_row, LINK_ROW_BYTES);
+    s_pkt[0] = LINK_MAGIC1;
+    s_pkt[1] = LINK_MAGIC2;
+    s_pkt[2] = frame_id;
+    s_pkt[3] = row;
+    s_pkt[4] = xor;
+    memcpy(s_pkt + LINK_HDR_BYTES, s_tx_row, LINK_ROW_BYTES);
 
-    written = uart_write_bytes(LINK_UART_NUM, (const char *)pkt, LINK_PKT_BYTES);
-    if (written != LINK_PKT_BYTES) {
-        ESP_LOGE(TAG, "uart_write_bytes=%d, expected %d", written, LINK_PKT_BYTES);
-        return ESP_FAIL;
+    if (!wait_ready(1, 5000)) {
+        ESP_LOGW(TAG, "timeout waiting READY=1 at row %u (check PB10->GPIO42)", row);
+        return ESP_ERR_TIMEOUT;
     }
-    /* 必须等硬件把 485 字节全部发出去，否则下一包会覆盖 ring buffer */
-    esp_err_t err = uart_wait_tx_done(LINK_UART_NUM, pdMS_TO_TICKS(100));
+    if (row <= 1) {
+        ESP_LOGI(TAG, "row %u: READY=1, sending %d bytes via SPI", row, LINK_PKT_BYTES);
+    }
+
+    memset(&t, 0, sizeof(t));
+    t.length    = (size_t)LINK_PKT_BYTES * 8;    /* 以 bit 计 */
+    t.tx_buffer = s_pkt;
+
+    esp_err_t err = spi_device_polling_transmit(s_spi, &t);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "uart_wait_tx_done failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "spi transmit failed at row %u: %s", row, esp_err_to_name(err));
         return err;
     }
     if (row == 0) {
-        ESP_LOGI(TAG, "row 0: UART transmit done");
+        ESP_LOGI(TAG, "row 0: SPI transmit done");
     }
 
-    /* STM32 收到首字节后立刻拉低 READY；等它拉低才算这一包被接住。
-     * 超时只告警不报错：下一包会再等 READY=1，不会丢同步。 */
+    /* STM32 的 DMA 收满立刻拉低 READY；等它拉低才算这一包真的被接住。
+     * 拉不低说明 STM32 没在收（没烧 V7、SPI 线没接、或 DMA 没武装），
+     * 这时中止本帧，比"继续发 240 行然后误报成功"有利于排错。 */
     if (!wait_ready(0, 100)) {
-        ESP_LOGW(TAG, "READY not pulled low at row %u (check PB10->GPIO42)", row);
+        ESP_LOGW(TAG, "READY not pulled low at row %u "
+                      "(is STM32 flashed with V7? check PB10->GPIO42)", row);
+        return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
 }
@@ -410,7 +425,8 @@ esp_err_t camera_link_run(void)
             if (err == ESP_OK) {
                 frames++;
                 if (frames == 1) {
-                    ESP_LOGI(TAG, "first frame sent OK (240 rows x 485B)");
+                    ESP_LOGI(TAG, "first frame sent OK (%u rows x %dB over SPI)",
+                             (unsigned)LINK_PIX_H, LINK_PKT_BYTES);
                 }
                 if (frames % 5 == 0) {
                     int64_t ms = (esp_timer_get_time() - t0) / 1000;

@@ -63,6 +63,28 @@ typedef struct {
 #define LCD_RCC_APB2ENR   (*(volatile uint32_t *)0x40021018U)
 #define LCD_SYSTICK       ((LCD_SysTick_Regs *)0xE000E010U)
 
+/* ---- 硬件 SPI1（PA5=SCK, PA7=MOSI，正好是本屏原来用的两根脚）---- */
+typedef struct {
+    volatile uint32_t CR1;
+    volatile uint32_t CR2;
+    volatile uint32_t SR;
+    volatile uint32_t DR;
+    volatile uint32_t CRCPR;
+    volatile uint32_t RXCRCR;
+    volatile uint32_t TXCRCR;
+    volatile uint32_t I2SCFGR;
+    volatile uint32_t I2SPR;
+} LCD_SPI_Regs;
+
+#define LCD_SPI           ((LCD_SPI_Regs *)0x40013000U)   /* SPI1 基址 */
+
+/* 波特率分频：BR[2:0]，SPI1 挂 APB2 = 72MHz
+ *   000 -> /2  = 36MHz   001 -> /4  = 18MHz
+ *   010 -> /8  =  9MHz   011 -> /16 = 4.5MHz
+ * ILI9341 手册写周期最快约 100ns(10MHz)，18MHz 是大量模块的常用值；
+ * 若出现花屏/错位就改成 0x02（9MHz）。 */
+#define LCD_SPI_BR        0x01u
+
 #define PIN_RES   0
 #define PIN_CS    1
 #define PIN_SDI   7

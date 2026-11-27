@@ -74,16 +74,20 @@
 #define CAM_SWAP_RGB565   1
 
 /* ============================================================================
- * 摄像头 -> STM32 的 UART 链路（TFT 已从 ESP32 拔掉，原屏幕脚位复用）
+ * 摄像头 -> STM32 的 SPI 链路（TFT 已从 ESP32 拔掉，原屏幕脚位复用）
  *
- *   ESP32-S31 GPIO43  (UART1 TX) -> STM32 PA10 (USART1 RX)
- *   ESP32-S31 GPIO42  (READY 输入) <- STM32 PB10 (READY 输出)
- *   GND 共地
+ *   ESP32-S31 GPIO45 (SCK   输出) -> STM32 PB13 (SPI2_SCK)
+ *   ESP32-S31 GPIO44 (MOSI  输出) -> STM32 PB15 (SPI2_MOSI)
+ *   ESP32-S31 GPIO43 (CS    输出) -> STM32 PB12 (SPI2_NSS)
+ *   ESP32-S31 GPIO42 (READY 输入) <- STM32 PB10 (READY 输出)
+ *   GND 共地（必须）
  *
- * 波特率 2,000,000，8N1。摄像头脚位完全不动，仍是上半部分那 16 根线。
- * GPIO44/45 空着；GPIO40/41 不用，避开 strapping 脚。
+ * 这正是原来 ESP32 直接驱动 ILI9341 用的那四根线，一根没加也没换。
+ * SPI mode 0，8MHz，MSB first；摄像头脚位完全不动。
  * ========================================================================== */
-#define LINK_PIN_TX       43
+#define LINK_PIN_SCK      45
+#define LINK_PIN_MOSI     44
+#define LINK_PIN_CS       43
 #define LINK_PIN_READY    42
 
 esp_err_t camera_preview_init(void);

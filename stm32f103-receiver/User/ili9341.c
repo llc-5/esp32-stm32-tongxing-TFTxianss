@@ -114,38 +114,66 @@ static void delay_ms(uint32_t ms)
     }
 }
 
- 
+/* ============================================================================
+ * 底层字节发送：硬件 SPI1（PA5=SCK / PA7=MOSI）
+ *
+ * 原来这里是一位位翻转 GPIO 模拟 SPI，实测写一行 480 字节约 1.6ms、
+ * 一帧 240 行要 390ms，是刷新率最大的瓶颈（比通讯本身还慢）。
+ * PA5/PA7 本来就是 SPI1 的默认复用脚，改成硬件 SPI1 @18MHz 后
+ * 同样 480 字节只要约 0.21ms，快 7~8 倍。
+ *
+ * CS/DC/RES 仍是普通 GPIO 软件控制：一包里要中途切 DC，软件管更方便。
+ * ========================================================================== */
+static void lcd_spi_init(void)
+{
+    LCD_RCC_APB2ENR |= (1UL << 12);          /* SPI1EN —— 原代码反而在清这一位 */
+
+    LCD_SPI->CR1 = 0;
+    LCD_SPI->CR2 = 0;
+    LCD_SPI->I2SCFGR = 0;                    /* 选 SPI 模式，不是 I2S */
+    /* MSTR=1 主机, SSM=1+SSI=1（NSS 不用硬件，CS 当普通 IO 软件拉）,
+     * CPOL=0 CPHA=0（mode 0，和 ILI9341 一致）, DFF=0(8bit), MSB first,
+     * BR=LCD_SPI_BR, SPE=1 */
+    LCD_SPI->CR1 = (1UL << 2)                /* MSTR  */
+                 | (1UL << 9)                /* SSM   */
+                 | (1UL << 8)                /* SSI   */
+                 | ((uint32_t)LCD_SPI_BR << 3)
+                 | (1UL << 6);               /* SPE   */
+}
+
+/* 发一个字节，不等待发送结束（攒着发更快） */
+static inline void lcd_spi_tx(uint8_t dat)
+{
+    while (!(LCD_SPI->SR & (1UL << 1))) {    /* 等 TXE：发送寄存器空 */
+    }
+    *(volatile uint8_t *)&LCD_SPI->DR = dat;
+}
+
+/* 等最后一个字节真正移出（BSY 清零），CS 才能拉高，否则会截掉尾巴 */
+static void lcd_spi_flush(void)
+{
+    while (!(LCD_SPI->SR & (1UL << 1))) {    /* TXE */
+    }
+    while (LCD_SPI->SR & (1UL << 7)) {       /* BSY */
+    }
+}
+
+/* 关片选：必须先等数据发完 */
+static void lcd_cs_high(void)
+{
+    lcd_spi_flush();
+    LCD_CS_H();
+}
+
 static void spi_write_byte(uint8_t dat)
 {
-    uint8_t i;
-
-    for (i = 0; i < 8; i++) {
-        LCD_SCK_L();
-        if (dat & 0x80) { LCD_SDI_H(); } else { LCD_SDI_L(); }
-        dat <<= 1;
-        LCD_SCK_H();                         
-    }
-    LCD_SCK_L();
+    lcd_spi_tx(dat);
 }
 
  
 static void spi_write_const(uint8_t dat)
 {
-    uint8_t i;
-
-    if (dat == 0xFF) {
-        LCD_SDI_H();
-    } else if (dat == 0x00) {
-        LCD_SDI_L();
-    } else {
-        spi_write_byte(dat);
-        return;
-    }
-    for (i = 0; i < 8; i++) {
-        LCD_SCK_L();
-        LCD_SCK_H();
-    }
-    LCD_SCK_L();
+    lcd_spi_tx(dat);
 }
 
 static void write_cmd(uint8_t cmd)
@@ -153,6 +181,7 @@ static void write_cmd(uint8_t cmd)
     LCD_CS_L();
     LCD_DC_L();
     spi_write_byte(cmd);
+    lcd_spi_flush();          /* 切 DC / 拉 CS 前必须等字节真正移出 */
     LCD_CS_H();
 }
 
@@ -162,11 +191,12 @@ static void write_cmd_data(uint8_t cmd, const uint8_t *dat, uint8_t n)
     LCD_CS_L();
     LCD_DC_L();
     spi_write_byte(cmd);
+    lcd_spi_flush();          /* 命令字节发完再切 DC，否则会被当成数据 */
     LCD_DC_H();
     while (n--) {
         spi_write_byte(*dat++);
     }
-    LCD_CS_H();
+    lcd_cs_high();
 }
 
 static void ram_start(void)
@@ -174,12 +204,13 @@ static void ram_start(void)
     LCD_CS_L();
     LCD_DC_L();
     spi_write_byte(0x2C);
+    lcd_spi_flush();          /* 0x2C 发完再切 DC */
     LCD_DC_H();
 }
 
 static void ram_end(void)
 {
-    LCD_CS_H();
+    lcd_cs_high();
 }
 
 static void set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
@@ -205,13 +236,16 @@ static void gpio_init(void)
     uint32_t crl;
 
     LCD_RCC_APB2ENR |= (1UL << 2);           
-    LCD_RCC_APB2ENR &= ~(1UL << 12);          
+    /* 原来这里有一句 &= ~(1<<12) 把 SPI1EN 关掉了，是历史遗留；
+     * SPI1 现在给屏幕自己用，时钟在 lcd_spi_init() 里打开。 */
 
     crl  = LCD_GPIOA->CRL;
     crl &= ~((0xFUL << 0) | (0xFUL << 4) | (0xFUL << 8) |
              (0xFUL << 20) | (0xFUL << 28));
+    /* PA0=RES PA1=CS PA2=DC 普通推挽输出(0x3)；
+     * PA5=SCK PA7=MOSI 复用推挽输出(0xB)，交给 SPI1 硬件驱动 */
     crl |=  ((0x3UL << 0) | (0x3UL << 4) | (0x3UL << 8) |
-             (0x3UL << 20) | (0x3UL << 28));
+             (0xBUL << 20) | (0xBUL << 28));
 #if LCD_LED_CTRL
     crl &= ~(0xFUL << (4UL * LCD_LED_PIN));
     crl |=  (0x3UL << (4UL * LCD_LED_PIN));
@@ -223,9 +257,8 @@ static void gpio_init(void)
 #endif
     LCD_CS_H();                              
     LCD_RES_H();                              
-    LCD_SCK_L();                              
     LCD_DC_H();
-    LCD_SDI_L();
+    /* SCK/SDI 已经是 SPI1 的复用脚，不用再手动拉电平 */
 }
 
  
@@ -234,7 +267,7 @@ void LCD_Init(void)
     uint8_t p[4];
 
     gpio_init();
-
+    lcd_spi_init();                          /* PA5/PA7 已配成复用，这里开硬件 SPI1 */
     LCD_RES_H();
     delay_ms(20);
     LCD_RES_L();
@@ -512,31 +545,17 @@ void LCD_FillArea(uint16_t x, uint16_t y,
 
 /* ============================================================================
  * 摄像头链路专用：把一行 RGB565（高字节在前）写入指定 y 行。
- *
- * 用 BSRR 一次写同时完成「SCK 拉低 + SDI 变化」，比通用 spi_write_byte
- * 少一半 GPIO 操作。每行单独开窗，即使上一包丢了也不会把画面写串位。
+ * 每行单独开窗，即使上一包丢了也不会把画面写串位。
  * ========================================================================== */
 static void spi_write_bytes_fast(const uint8_t *data, uint32_t len)
 {
     uint32_t i;
 
     for (i = 0; i < len; i++) {
-        uint8_t dat = data[i];
-        uint8_t bit;
-
-        for (bit = 0; bit < 8; bit++) {
-            uint32_t out = (1UL << (PIN_SCK + 16));      /* SCK 拉低 */
-            if (dat & 0x80U) {
-                out |= (1UL << PIN_SDI);                  /* SDI 置 1 */
-            } else {
-                out |= (1UL << (PIN_SDI + 16));           /* SDI 清 0 */
-            }
-            LCD_GPIOA->BSRR = out;                        /* 下降沿 + 数据建立 */
-            LCD_GPIOA->BSRR = (1UL << PIN_SCK);           /* 上升沿，屏采样 */
-            dat = (uint8_t)(dat << 1);
+        while (!(LCD_SPI->SR & (1UL << 1))) {   /* 等 TXE */
         }
+        *(volatile uint8_t *)&LCD_SPI->DR = data[i];
     }
-    LCD_SCK_L();
 }
 
 void LCD_DrawRGB565Row(uint16_t x, uint16_t y, uint16_t w, const uint8_t *data)

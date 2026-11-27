@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>ESP32-S31 摄像头 → STM32F103CBT6 TFT 接线图（UART 版）</title>
+<title>ESP32-S31 摄像头 → STM32F103CBT6 TFT 接线图（SPI 版 V7）</title>
 <style>
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background:#f7f8fa; color:#1f2430; margin:24px; }
   h1 { font-size:22px; margin-bottom:6px; }
@@ -18,8 +18,8 @@
 </style>
 </head>
 <body>
-<h1>ESP32-S31 摄像头 → STM32F103CBT6 TFT 接线图（UART 版）</h1>
-<p class="sub">摄像头脚位保持原样；只把 TFT 从 ESP32 移到 STM32。双机通讯改为 UART，只需 2 根信号线 + 共地。两端 3.3V 各自供电。</p>
+<h1>ESP32-S31 摄像头 → STM32F103CBT6 TFT 接线图（SPI 版 V7）</h1>
+<p class="sub">摄像头脚位保持原样；只把 TFT 从 ESP32 移到 STM32。双机通讯为 SPI（mode 0 / 8MHz），4 根信号线 + 共地。两端 3.3V 各自供电。</p>
 
 <div class="card">
 <svg width="1180" height="470" viewBox="0 0 1180 470" xmlns="http://www.w3.org/2000/svg">
@@ -35,68 +35,81 @@
     </marker>
   </defs>
 
-  <text x="30" y="28" font-size="17" font-weight="bold" fill="#1f2430">系统连接总览</text>
-  <text x="30" y="50" font-size="12" fill="#5b6472">蓝色＝原摄像头 DVP（不变）　橙色＝新增 UART 链路（2 根线）　绿色＝TFT 屏（移到 STM32）</text>
+  <text x="20" y="28" font-size="17" font-weight="bold" fill="#1f2430">系统连接总览</text>
+  <text x="20" y="50" font-size="12" fill="#5b6472">蓝色＝原摄像头 DVP（不变）　橙色＝SPI 链路（4 根）　绿色＝TFT 屏（移到 STM32，走硬件 SPI1）</text>
 
   <!-- camera -->
-  <rect x="30" y="80" width="210" height="300" rx="8" fill="#eef4ff" stroke="#3b6fd4" stroke-width="2"/>
-  <text x="52" y="108" font-size="16" font-weight="bold" fill="#2450a8">OV2640 / OV5640</text>
-  <text x="52" y="130" font-size="12" fill="#445064">8 位 DVP，自带 24MHz 晶振</text>
-  <text x="52" y="162" font-size="12" fill="#2450a8">上排：GND SCL SDA D0 D2 D4 D6 PCLK PWDN</text>
-  <text x="52" y="182" font-size="12" fill="#2450a8">下排：3V3 VSYNC HREF RST D1 D3 D5 D7 FLASH</text>
-  <text x="52" y="216" font-size="12" fill="#445064">XCLK：不接（模块自振）</text>
-  <text x="52" y="238" font-size="12" fill="#445064">PWDN / RST / FLASH：不接</text>
-  <text x="52" y="344" font-size="12" fill="#8a4b00">引脚顺序以模块正面丝印为准</text>
+  <rect x="20" y="80" width="200" height="300" rx="8" fill="#eef4ff" stroke="#3b6fd4" stroke-width="2"/>
+  <text x="38" y="108" font-size="15" font-weight="bold" fill="#2450a8">OV2640 / OV5640</text>
+  <text x="38" y="130" font-size="12" fill="#445064">8 位 DVP，自带 24MHz 晶振</text>
+  <text x="38" y="162" font-size="11" fill="#2450a8">上排：GND SCL SDA D0 D2</text>
+  <text x="38" y="180" font-size="11" fill="#2450a8">　　　D4 D6 PCLK PWDN</text>
+  <text x="38" y="202" font-size="11" fill="#2450a8">下排：3V3 VSYNC HREF RST</text>
+  <text x="38" y="220" font-size="11" fill="#2450a8">　　　D1 D3 D5 D7 FLASH</text>
+  <text x="38" y="252" font-size="12" fill="#445064">XCLK：不接（模块自振）</text>
+  <text x="38" y="274" font-size="12" fill="#445064">PWDN / RST / FLASH：不接</text>
+  <text x="38" y="344" font-size="12" fill="#8a4b00">引脚顺序以模块正面丝印为准</text>
 
   <!-- esp32 -->
-  <rect x="330" y="80" width="260" height="300" rx="8" fill="#f4f7fc" stroke="#3b6fd4" stroke-width="2"/>
-  <text x="352" y="108" font-size="16" font-weight="bold" fill="#2450a8">ESP32-S31（采集端）</text>
-  <text x="352" y="132" font-size="12" fill="#445064">原 TFT 脚 43/42 改作 UART 链路</text>
-  <text x="352" y="162" font-size="12" fill="#2450a8">摄像头：3,4,35,37,38,39,0,1,2,47,46,48,49</text>
-  <line x1="352" y1="184" x2="568" y2="184" stroke="#d7dce5"/>
-  <text x="352" y="208" font-size="12" fill="#b45309">GPIO43 → UART1 TX</text>
-  <text x="352" y="230" font-size="12" fill="#b45309">GPIO42 ← READY</text>
-  <text x="352" y="262" font-size="12" fill="#445064">GPIO44 / 45：空着不用</text>
-  <text x="352" y="344" font-size="12" fill="#445064">GPIO40 / 41 不用（避开 strapping）</text>
+  <rect x="280" y="80" width="250" height="300" rx="8" fill="#f4f7fc" stroke="#3b6fd4" stroke-width="2"/>
+  <text x="298" y="108" font-size="15" font-weight="bold" fill="#2450a8">ESP32-S31（采集端）</text>
+  <text x="298" y="130" font-size="12" fill="#445064">SPI 主机 · 原 TFT 脚复用</text>
+  <text x="298" y="158" font-size="11" fill="#2450a8">摄像头：3,4,35,37,38,39,0,1,2,47,46,48,49</text>
+  <line x1="298" y1="174" x2="512" y2="174" stroke="#d7dce5"/>
+  <text x="298" y="196" font-size="12" fill="#b45309">GPIO45 → SCK</text>
+  <text x="298" y="222" font-size="12" fill="#b45309">GPIO44 → MOSI</text>
+  <text x="298" y="248" font-size="12" fill="#b45309">GPIO43 → CS</text>
+  <text x="298" y="286" font-size="12" fill="#b45309">GPIO42 ← READY</text>
+  <text x="298" y="344" font-size="12" fill="#445064">GPIO40 / 41 不用（避开 strapping）</text>
 
   <!-- stm32 -->
-  <rect x="690" y="80" width="260" height="300" rx="8" fill="#f0faf5" stroke="#16855b" stroke-width="2"/>
-  <text x="712" y="108" font-size="16" font-weight="bold" fill="#0d6e4b">STM32F103CBT6（显示端）</text>
-  <text x="712" y="132" font-size="12" fill="#445064">USART1 RX + 软件模拟屏 SPI</text>
-  <text x="712" y="162" font-size="12" fill="#b45309">PA10 ← UART RX（2,000,000 8N1）</text>
-  <text x="712" y="184" font-size="12" fill="#b45309">PB10 → READY</text>
-  <line x1="712" y1="204" x2="928" y2="204" stroke="#cfe8dc"/>
-  <text x="712" y="228" font-size="12" fill="#0d6e4b">PA0 → RES　PA1 → CS</text>
-  <text x="712" y="250" font-size="12" fill="#0d6e4b">PA2 → DC　PA5 → SCK</text>
-  <text x="712" y="272" font-size="12" fill="#0d6e4b">PA7 → SDI　PA4 → LED</text>
-  <text x="712" y="344" font-size="12" fill="#445064">20KB SRAM：逐行接收，不存整帧</text>
+  <rect x="690" y="80" width="250" height="300" rx="8" fill="#f0faf5" stroke="#16855b" stroke-width="2"/>
+  <text x="708" y="108" font-size="15" font-weight="bold" fill="#0d6e4b">STM32F103CBT6（显示端）</text>
+  <text x="708" y="130" font-size="12" fill="#445064">SPI2 从机 + DMA 接收</text>
+  <text x="708" y="158" font-size="11" fill="#b45309">PB13 ← SCK（8MHz, mode 0）</text>
+  <text x="708" y="180" font-size="11" fill="#b45309">PB15 ← MOSI</text>
+  <text x="708" y="202" font-size="11" fill="#b45309">PB12 ← CS</text>
+  <text x="708" y="224" font-size="11" fill="#b45309">PB10 → READY</text>
+  <line x1="708" y1="240" x2="922" y2="240" stroke="#cfe8dc"/>
+  <text x="708" y="262" font-size="11" fill="#0d6e4b">PA0 → RES　PA1 → CS</text>
+  <text x="708" y="284" font-size="11" fill="#0d6e4b">PA2 → DC　PA4 → LED</text>
+  <text x="708" y="306" font-size="11" fill="#0d6e4b">PA5 → SCK　PA7 → SDI</text>
+  <text x="708" y="330" font-size="11" fill="#0d6e4b">屏走硬件 SPI1 @18MHz</text>
+  <text x="708" y="356" font-size="12" fill="#445064">20KB SRAM：逐行接收，不存整帧</text>
 
   <!-- tft -->
-  <rect x="1030" y="110" width="130" height="200" rx="8" fill="#eaf7f0" stroke="#16855b" stroke-width="2"/>
-  <text x="1050" y="140" font-size="15" font-weight="bold" fill="#0d6e4b">ILI9341</text>
-  <text x="1050" y="162" font-size="12" fill="#445064">240×320</text>
-  <text x="1050" y="184" font-size="12" fill="#445064">RGB565</text>
-  <text x="1050" y="206" font-size="12" fill="#445064">3.3V 供电</text>
-  <text x="1050" y="228" font-size="12" fill="#445064">SDO 不接</text>
-  <text x="1050" y="272" font-size="12" fill="#8a4b00">接 STM32，不接 ESP32</text>
+  <rect x="1000" y="110" width="150" height="220" rx="8" fill="#eaf7f0" stroke="#16855b" stroke-width="2"/>
+  <text x="1018" y="140" font-size="15" font-weight="bold" fill="#0d6e4b">ILI9341</text>
+  <text x="1018" y="164" font-size="12" fill="#445064">240×320</text>
+  <text x="1018" y="186" font-size="12" fill="#445064">RGB565</text>
+  <text x="1018" y="208" font-size="12" fill="#445064">3.3V 供电</text>
+  <text x="1018" y="230" font-size="12" fill="#445064">SDO 不接</text>
+  <text x="1018" y="272" font-size="11" fill="#8a4b00">接 STM32，</text>
+  <text x="1018" y="288" font-size="11" fill="#8a4b00">不接 ESP32</text>
 
-  <!-- connections: camera -> esp32 -->
-  <line x1="240" y1="230" x2="330" y2="230" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arr)"/>
-  <text x="256" y="220" font-size="12" fill="#2450a8">16 根 DVP</text>
+  <!-- camera -> esp32 -->
+  <line x1="220" y1="230" x2="280" y2="230" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="222" y="220" font-size="11" fill="#2450a8">16 根 DVP</text>
 
-  <!-- esp32 -> stm32 (UART: TX + READY) -->
-  <line x1="590" y1="212" x2="690" y2="212" stroke="#d97706" stroke-width="2" marker-end="url(#arrO)"/>
-  <text x="596" y="203" font-size="11" fill="#b45309">GPIO43 TX → PA10 RX</text>
-  <line x1="690" y1="256" x2="590" y2="256" stroke="#d97706" stroke-width="2" marker-end="url(#arrO)"/>
-  <text x="596" y="275" font-size="11" fill="#b45309">PB10 READY → GPIO42</text>
+  <!-- esp32 -> stm32: SCK / MOSI / CS -->
+  <line x1="530" y1="192" x2="690" y2="192" stroke="#d97706" stroke-width="2" marker-end="url(#arrO)"/>
+  <text x="542" y="186" font-size="11" fill="#b45309">SCK　45 → PB13</text>
+  <line x1="530" y1="218" x2="690" y2="218" stroke="#d97706" stroke-width="2" marker-end="url(#arrO)"/>
+  <text x="542" y="212" font-size="11" fill="#b45309">MOSI 44 → PB15</text>
+  <line x1="530" y1="244" x2="690" y2="244" stroke="#d97706" stroke-width="2" marker-end="url(#arrO)"/>
+  <text x="542" y="238" font-size="11" fill="#b45309">CS　 43 → PB12</text>
+
+  <!-- stm32 -> esp32: READY -->
+  <line x1="690" y1="282" x2="530" y2="282" stroke="#d97706" stroke-width="2" marker-end="url(#arrO)"/>
+  <text x="542" y="300" font-size="11" fill="#b45309">READY 10 → 42</text>
 
   <!-- stm32 -> tft -->
-  <line x1="950" y1="230" x2="1030" y2="230" stroke="#16855b" stroke-width="2" marker-end="url(#arrG)"/>
-  <text x="958" y="220" font-size="12" fill="#0d6e4b">6 根 SPI</text>
+  <line x1="940" y1="230" x2="1000" y2="230" stroke="#16855b" stroke-width="2" marker-end="url(#arrG)"/>
+  <text x="940" y="220" font-size="11" fill="#0d6e4b">6 根</text>
 
   <!-- ground -->
-  <line x1="30" y1="410" x2="1160" y2="410" stroke="#6b7280" stroke-width="2" stroke-dasharray="7 5"/>
-  <text x="30" y="432" font-size="12" fill="#4b5563">GND 共地：摄像头、ESP32、STM32、TFT 四者必须全部连通</text>
+  <line x1="20" y1="420" x2="1150" y2="420" stroke="#6b7280" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="20" y="442" font-size="12" fill="#4b5563">GND 共地：摄像头、ESP32、STM32、TFT 四者必须全部连通 —— 共地不良是高速 SPI 误码的头号原因</text>
 </svg>
 </div>
 
@@ -111,30 +124,36 @@
 <tr><td>ESP32</td><td>3.3V</td><td>GPIO48</td><td>GPIO49</td><td>不接</td><td>GPIO37</td><td>GPIO39</td><td>GPIO1</td><td>GPIO47</td><td>不接</td></tr>
 </table>
 
-<h2>2. ESP32-S31 → STM32F103CBT6（UART 链路，2 根信号）</h2>
+<h2>2. ESP32-S31 → STM32F103CBT6（SPI 链路，3 根数据 + 1 根握手）</h2>
 <table>
 <tr><th>信号</th><th>ESP32-S31</th><th>STM32F103CBT6</th><th>方向</th><th>说明</th></tr>
-<tr><td>UART1 TX</td><td>GPIO43</td><td>PA10（USART1 RX）</td><td>→</td><td>8N1，2,000,000 baud</td></tr>
-<tr><td>READY</td><td>GPIO42</td><td>PB10</td><td>←</td><td>STM32 拉高请求下一行，收到首字节立刻拉低</td></tr>
+<tr><td>SCK</td><td>GPIO45</td><td>PB13（SPI2_SCK）</td><td>→</td><td>mode 0（CPOL=0 / CPHA=0），8MHz，MSB first</td></tr>
+<tr><td>MOSI</td><td>GPIO44</td><td>PB15（SPI2_MOSI）</td><td>→</td><td>单向，STM32 不回数据</td></tr>
+<tr><td>CS</td><td>GPIO43</td><td>PB12（SPI2_NSS）</td><td>→</td><td>一次事务包住整包 485 字节</td></tr>
+<tr><td>READY</td><td>GPIO42</td><td>PB10</td><td>←</td><td>STM32 的 DMA 武装好后拉高；收满 485 字节立刻拉低</td></tr>
 <tr><td>GND</td><td>GND</td><td>GND</td><td>—</td><td>必须共地</td></tr>
 </table>
-<p class="note">GPIO44 / GPIO45 空着不用（SPI 方案已废弃）。GPIO40/41 空着（40 是 strapping 脚）。线长建议 &lt;20cm；若大量校验错，两端同时把 <code>LINK_UART_BAUD</code> 改成 <code>1000000UL</code> 重编重烧。</p>
+<p class="note"><b>SCK 和 MOSI 接反是最常见的接错</b>，现象是屏上 <code>G</code>（magic 错）计数飞涨。<br>
+GPIO40/41 空着（40 是 strapping 脚）。线长建议 &lt;20cm；若 <code>C</code>/<code>G</code> 持续增长，两端同时把 <code>LINK_SPI_HZ</code> 从 <code>8000000UL</code> 改成 <code>4000000UL</code> 重编重烧。</p>
 
 <h2>3. ILI9341 TFT → STM32F103CBT6（从 ESP32 移过来）</h2>
 <table>
 <tr><th>TFT 脚</th><th>STM32</th><th>说明</th></tr>
-<tr><td>RES / RESET</td><td>PA0</td><td>复位</td></tr>
-<tr><td>CS</td><td>PA1</td><td>片选</td></tr>
-<tr><td>DC / RS</td><td>PA2</td><td>命令/数据</td></tr>
-<tr><td>SCK</td><td>PA5</td><td>屏 SPI（软件模拟）</td></tr>
-<tr><td>SDI / MOSI</td><td>PA7</td><td>屏 SPI 数据</td></tr>
+<tr><td>RES / RESET</td><td>PA0</td><td>复位（软件控制）</td></tr>
+<tr><td>CS</td><td>PA1</td><td>片选（软件控制）</td></tr>
+<tr><td>DC / RS</td><td>PA2</td><td>命令/数据（软件控制）</td></tr>
+<tr><td>SCK</td><td>PA5</td><td><b>SPI1_SCK，硬件 SPI1 @18MHz</b></td></tr>
+<tr><td>SDI / MOSI</td><td>PA7</td><td><b>SPI1_MOSI，硬件 SPI1</b></td></tr>
 <tr><td>LED / 背光</td><td>PA4</td><td>代码控制；也可改 3.3V 常亮</td></tr>
 <tr><td>VCC / GND</td><td>3.3V / GND</td><td>不要接 5V；屏必须 3.3V 兼容</td></tr>
 <tr><td>SDO / 触摸脚</td><td>不接</td><td>原工程未使用</td></tr>
 </table>
+<p class="note">PA5/PA7 原来是 GPIO 逐位翻转模拟 SPI（写一帧要 390ms），现在交给硬件 SPI1，同样数据量只要约 51ms。
+屏对时钟敏感，若出现花屏/斜纹，把 <code>ili9341.h</code> 里的 <code>LCD_SPI_BR</code> 从 <code>0x01</code>（18MHz）改成 <code>0x02</code>（9MHz）。</p>
 
 <h2>4. 链路协议速查</h2>
-<p>每行一包 485 字节：<code>A5 5A | 帧号 | 行号(0~239) | 异或校验 | 480 字节 RGB565(高字节在前)</code>。双 magic 便于错位后重新同步。STM32 收到一行立刻写屏，不缓存整帧（只有 20KB SRAM）。理论上限约 1.7fps，实际约 1fps。</p>
-<p>顶栏调试：<code>V6</code> 为 UART 版（<code>V5</code> 是旧 SPI 版）；<code>K</code> 有效行、<code>T</code> 超时、<code>C</code> 校验错、<code>G</code> magic 错、<code>W</code> 行号错、<code>L</code> 主循环心跳。</p>
+<p>每行一包 485 字节：<code>A5 5A | 帧号 | 行号(0~239) | 异或校验 | 480 字节 RGB565(高字节在前)</code>。双 magic 便于错位后重新同步。STM32 用 <b>DMA 整包接收</b>（485 字节搬完才打扰 CPU），收到一行立刻写屏，不缓存整帧（只有 20KB SRAM）。</p>
+<p>性能：链路 485B×240 行÷8MHz ≈ 116ms/帧，屏写入约 51ms/帧，串行相加预期 <b>5~6fps</b>（UART 版约 1fps）。</p>
+<p>顶栏调试：<code>V7</code> 为 SPI 版（<code>V6</code> 是旧 UART 版，接线不同，必须重烧）；<code>K</code> 有效行、<code>T</code> 超时、<code>C</code> 校验错、<code>G</code> magic 错、<code>W</code> 行号错、<code>L</code> 主循环心跳。</p>
 </body>
 </html>
