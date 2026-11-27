@@ -199,13 +199,16 @@ int main(void)
             }
         }
 
-        /* 每 2 圈刷新一次顶栏，三页轮换 */
+        /* 顶栏刷新频率优化：原来每 2 行刷一次，一帧刷 120 次。
+         * show_debug 要清 240x40 蓝底 + 画 30 个 size2 字符，全是软件模拟 SPI，
+         * 实测一帧光刷顶栏就要 ~8 秒，是帧率的主要瓶颈。
+         * 改成每 240 行（一帧）刷一次，顶栏开销降到原来的 1/120。 */
         tick++;
-        if (tick >= 2) {
+        if (tick >= LINK_PIX_H) {
             tick = 0;
             show_debug(n_ok, n_timeout, n_xor, n_magic, n_row,
                        (uint16_t)(n_loop % 1000),
-                       (uint8_t)((n_loop / 2) % 3));
+                       (uint8_t)((n_loop / LINK_PIX_H) % 3));
         }
     }
 }
