@@ -7,7 +7,8 @@
  * 与原来的工程完全一致，一根没动；原来接 TFT 的 43 改 UART1 TX、42 改 READY。
  *
  * OV2640 请求 240x240 RGB565；OV5640 只给 800x600，就在 PSRAM 里
- * 居中裁剪 + 最近邻缩放到 240x240，再逐行送给 STM32。
+ * 居中裁剪 + 最近邻缩放到 LINK_PIX_W x LINK_PIX_H（当前 120x120），
+ * 再逐行送给 STM32。画幅从 240 降到 120 后每帧数据量减为 1/4。
  * ========================================================================== */
 
 #include <string.h>
@@ -79,14 +80,14 @@ static uint32_t s_buffer_len[BUFFER_COUNT];
 /* 传感器实际输出尺寸（OV2640 可能是 240x240，OV5640 是 800x600） */
 static uint32_t s_cap_w;
 static uint32_t s_cap_h;
-/* 需要缩放时用的 240x240 RGB565 中转缓冲（PSRAM） */
+/* 缩放中转缓冲（PSRAM），尺寸由 LINK_PIX_W/H 决定 */
 static uint8_t *s_scaled;
 
 /* UART 链路 */
 #define LINK_UART_NUM     UART_NUM_1
-static uint8_t s_tx_row[LINK_ROW_BYTES];   /* 480 字节，单行 BE 格式 */
+static uint8_t s_tx_row[LINK_ROW_BYTES];   /* 单行 BE 格式，当前 240 字节 */
 
-/* 把 s_cap_w x s_cap_h 的 RGB565 帧居中裁剪成正方形，最近邻缩放到 240x240 */
+/* 把 s_cap_w x s_cap_h 的 RGB565 帧居中裁剪成正方形，最近邻缩放到 LINK_PIX_W x LINK_PIX_H */
 static void scale_frame_to_buf(const uint8_t *src)
 {
     uint32_t side = (s_cap_w < s_cap_h) ? s_cap_w : s_cap_h;
@@ -304,7 +305,7 @@ static bool wait_ready(int level, int timeout_ms)
     return true;
 }
 
-/* 发一行：485 字节，双 magic + 帧号 + 行号 + 异或校验 + 480 字节像素 */
+/* 发一行：LINK_PKT_BYTES 字节（当前 245），双 magic + 帧号 + 行号 + 异或校验 + 像素 */
 static esp_err_t link_send_row(const uint8_t *rgb565_le,
                                uint8_t frame_id, uint8_t row)
 {
@@ -346,7 +347,7 @@ static esp_err_t link_send_row(const uint8_t *rgb565_le,
         ESP_LOGE(TAG, "uart_write_bytes=%d, expected %d", written, LINK_PKT_BYTES);
         return ESP_FAIL;
     }
-    /* 必须等硬件把 485 字节全部发出去，否则下一包会覆盖 ring buffer */
+    /* 必须等硬件把整包全部发出去，否则下一包会覆盖 ring buffer */
     esp_err_t err = uart_wait_tx_done(LINK_UART_NUM, pdMS_TO_TICKS(100));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "uart_wait_tx_done failed: %s", esp_err_to_name(err));
@@ -410,7 +411,8 @@ esp_err_t camera_link_run(void)
             if (err == ESP_OK) {
                 frames++;
                 if (frames == 1) {
-                    ESP_LOGI(TAG, "first frame sent OK (240 rows x %dB)", LINK_PKT_BYTES);
+                    ESP_LOGI(TAG, "first frame sent OK (%u rows x %dB)",
+                             (unsigned)LINK_PIX_H, LINK_PKT_BYTES);
                 }
                 if (frames % 5 == 0) {
                     int64_t ms = (esp_timer_get_time() - t0) / 1000;
