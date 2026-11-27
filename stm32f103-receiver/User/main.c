@@ -183,9 +183,7 @@ int main(void)
                 n_row++;
             } else {
                 n_ok++;
-                /* 小画幅居中显示：120x120 放在 240x320 屏的 (60,100) */
-                LCD_DrawRGB565Row(LINK_SCREEN_X,
-                                  (uint16_t)(LINK_SCREEN_Y + s_pkt[3]),
+                LCD_DrawRGB565Row(0, (uint16_t)(LINK_SCREEN_Y + s_pkt[3]),
                                   LINK_PIX_W, s_pkt + LINK_HDR_BYTES);
                 expect_row++;
 
