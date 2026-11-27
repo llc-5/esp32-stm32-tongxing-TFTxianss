@@ -379,6 +379,68 @@ static esp_err_t link_send_row(const uint8_t *rgb565_le,
     return ESP_OK;
 }
 
+esp_err_t camera_link_selftest(void)
+{
+    /* 摄像头起不来时的备胎：把 SPI 链路单独跑起来，发彩条测试图案。
+     * 目的是把"摄像头接触不良"和"两板连线不对"两个问题拆开排查——
+     * 只要 STM32 的 K 开始涨、屏上出现彩条，就证明 SPI 那 4 根线是通的。 */
+    static const uint16_t bar[6] = {
+        0xF800, 0x07E0, 0x001F, 0xFFE0, 0xF81F, 0x07FF,  /* 红 绿 蓝 黄 紫 青 */
+    };
+    uint8_t  row_le[LINK_ROW_BYTES];
+    uint32_t frames = 0;
+    int64_t  t0;
+
+    ESP_LOGW(TAG, "camera unavailable -> SPI LINK SELF-TEST (colour bars)");
+    ESP_LOGW(TAG, "screen showing bars + K rising on STM32 means the SPI wiring is OK");
+
+    ESP_RETURN_ON_ERROR(link_init(), TAG, "link init failed");
+    t0 = esp_timer_get_time();
+
+    while (1) {
+        uint32_t bar_x = (frames * 4u) % LINK_PIX_W;    /* 白条每帧右移，能看出刷新 */
+        esp_err_t err = ESP_OK;
+
+        for (uint16_t row = 0; row < LINK_PIX_H; row++) {
+            for (uint32_t i = 0; i < LINK_PIX_W; i++) {
+                uint32_t seg = (i * 6u) / LINK_PIX_W;
+                uint32_t d   = (i > bar_x) ? (i - bar_x) : (bar_x - i);
+                uint16_t px;
+
+                if (d < 6) {
+                    px = 0xFFFF;                          /* 移动白条 */
+                } else if (row < 6 || row >= (LINK_PIX_H - 6)) {
+                    px = 0x0000;                          /* 上下黑边：行号错位一眼可见 */
+                } else {
+                    px = bar[seg];
+                }
+                row_le[i * 2]     = (uint8_t)(px & 0xFF); /* 小端，与摄像头输出一致 */
+                row_le[i * 2 + 1] = (uint8_t)(px >> 8);
+            }
+            err = link_send_row(row_le, (uint8_t)frames, (uint8_t)row);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "selftest row %u failed: %s", row, esp_err_to_name(err));
+                break;
+            }
+        }
+
+        if (err == ESP_OK) {
+            frames++;
+            if (frames == 1) {
+                ESP_LOGI(TAG, "SELFTEST first frame sent OK - SPI link is alive");
+            }
+            if (frames % 5 == 0) {
+                int64_t ms = (esp_timer_get_time() - t0) / 1000;
+                ESP_LOGI(TAG, "SELFTEST %lu frames in %lld ms (~%.1f fps)",
+                         (unsigned long)frames, (long long)ms,
+                         ms > 0 ? (double)frames * 1000.0 / (double)ms : 0.0);
+            }
+        } else {
+            ESP_LOGW(TAG, "SELFTEST frame aborted at row - check SCK/MOSI/CS/READY + GND");
+        }
+    }
+}
+
 esp_err_t camera_link_run(void)
 {
     uint32_t frames = 0;

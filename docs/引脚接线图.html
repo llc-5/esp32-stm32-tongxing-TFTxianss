@@ -154,6 +154,6 @@ GPIO40/41 空着（40 是 strapping 脚）。线长建议 &lt;20cm；若 <code>C
 <h2>4. 链路协议速查</h2>
 <p>每行一包 485 字节：<code>A5 5A | 帧号 | 行号(0~239) | 异或校验 | 480 字节 RGB565(高字节在前)</code>。双 magic 便于错位后重新同步。STM32 用 <b>DMA 整包接收</b>（485 字节搬完才打扰 CPU），收到一行立刻写屏，不缓存整帧（只有 20KB SRAM）。</p>
 <p>性能：链路 485B×240 行÷8MHz ≈ 116ms/帧，屏写入约 51ms/帧，串行相加预期 <b>5~6fps</b>（UART 版约 1fps）。</p>
-<p>顶栏调试：<code>V7</code> 为 SPI 版（<code>V6</code> 是旧 UART 版，接线不同，必须重烧）；<code>K</code> 有效行、<code>T</code> 超时、<code>C</code> 校验错、<code>G</code> magic 错、<code>W</code> 行号错、<code>L</code> 主循环心跳。</p>
+<p>顶栏调试：<code>V7</code> 为 SPI 版（<code>V6</code> 是旧 UART 版，接线不同，必须重烧）；<code>K</code> 有效行、<code>T</code> 超时、<code>C</code> 校验错、<code>G</code> magic 错、<code>W</code> 行号错、<code>R</code> 一包里最多收到过多少字节（485 = 收满，0 = 时钟没进来）。</p>
 </body>
 </html>

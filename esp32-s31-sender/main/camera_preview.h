@@ -94,4 +94,8 @@ esp_err_t camera_preview_init(void);
 esp_err_t camera_preview_run(void);   /* 无限循环采帧并刷屏，出错才返回 */
 esp_err_t camera_link_run(void);      /* 无限循环采帧并送给 STM32，出错才返回 */
 
+/* 摄像头初始化失败时用的备胎：只跑 SPI 链路，发彩条测试图案。
+ * 用来单独验证两板连线，不依赖摄像头是否接触良好。 */
+esp_err_t camera_link_selftest(void);
+
 #endif

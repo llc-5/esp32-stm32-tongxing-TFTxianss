@@ -59,6 +59,9 @@ static uint8_t s_pkt[LINK_PKT_BYTES];
 /* 调试计数（放文件作用域，方便 show_debug 统一取用） */
 static uint16_t n_ok, n_timeout, n_magic, n_xor, n_row, n_loop;
 static uint8_t  n_page;
+/* 排错用：一包里最多收到过多少字节（485 = 收满）。
+ * 0 说明 SPI 时钟/片选根本没进来；485 说明收满了但校验没过。 */
+static uint16_t s_rx_max;
 
 /* --------------------------------------------------------------------------- */
 /* SPI2 从机初始化：纯寄存器，本工程 Library 组只有 misc/gpio/rcc，
@@ -130,6 +133,14 @@ static uint8_t link_recv_packet(void)
     guard = LINK_WAIT_GUARD;
     while ((DMA1->ISR & LINK_DMA_ISR_TCIF4) == 0) {
         if (--guard == 0) {
+            /* 超时时把 DMA 还剩多少字节记下来，这是排错的关键数字：
+             *   剩 485（收到 0 字节）→ 时钟/片选根本没进来，查 SCK、CS 接线
+             *   剩 1~484           → 时钟通了但没收满，查 MOSI、线长、共地
+             * 顶栏 R 显示的就是「一包里最多收到过多少字节」。 */
+            uint16_t got = (uint16_t)(LINK_PKT_BYTES - DMA1_Channel4->CNDTR);
+            if (got > s_rx_max) {
+                s_rx_max = got;
+            }
             DMA1_Channel4->CCR = 0;
             GPIO_ResetBits(LINK_READY_PORT, LINK_READY_PIN);
             return 1;                                /* 等包超时 */
@@ -165,7 +176,11 @@ static void put_num(char *buf, uint16_t v)
 }
 
 /* 顶栏调试显示（V7 = SPI 版）：一行大字，三页轮换。
- * 看到 "V7" 说明烧进去的是这一版；"V6" 是旧的 UART 版，两者接线不同。 */
+ * 看到 "V7" 说明烧进去的是这一版；"V6" 是旧的 UART 版，两者接线不同。
+ * 第三页的 R 是本版新加的关键排错数字：一包里最多收到过多少字节。
+ *   R = 0    → SPI 时钟/片选根本没进来（查 SCK=GPIO45→PB13、CS=GPIO43→PB12）
+ *   R 1~484  → 时钟通了但没收满（查 MOSI=GPIO44→PB15、共地、线长）
+ *   R = 485  → 收满了，看 C/G 是否在涨（涨则是内容错，不是没收到） */
 static void show_debug(void)
 {
     char line[32];
@@ -186,9 +201,9 @@ static void show_debug(void)
     } else if (n_page == 1) {         /* C=校验错  G=magic错 */
         line[p++] = 'C'; put_num(line + p, n_xor);     p += 6;
         line[p++] = 'G'; put_num(line + p, n_magic);   p += 6;
-    } else {                          /* W=行号错  L=主循环心跳 */
+    } else {                          /* W=行号错  R=一包里收到过的最多字节数 */
         line[p++] = 'W'; put_num(line + p, n_row);     p += 6;
-        line[p++] = 'L'; put_num(line + p, (uint16_t)(n_loop % 1000)); p += 6;
+        line[p++] = 'R'; put_num(line + p, s_rx_max);  p += 6;
     }
     line[p] = 0;
     LCD_ShowStringAtC(2, 2, line, WHITE, BLUE, 2);

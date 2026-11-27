@@ -19,10 +19,15 @@ void app_main(void)
     ESP_LOGI(TAG, "CAM SENDER BUILD: %s %s", __DATE__, __TIME__);
     ESP_LOGI(TAG, "========================================");
 
-    /* 摄像头未插好/供电不足时不 abort，否则芯片不断重启看起来像烧不进去 */
+    /* 摄像头未插好/供电不足时不 abort，否则芯片不断重启看起来像烧不进去。
+     * 摄像头起不来时改跑 SPI 链路自测：发彩条而不是干等，
+     * 这样能把"摄像头接触不良"和"两板连线不对"分开判断。 */
     esp_err_t err = camera_preview_init();
     if (err == ESP_OK) {
         err = camera_link_run();
+    } else {
+        ESP_LOGW(TAG, "camera init failed: %s -> SPI link self-test", esp_err_to_name(err));
+        err = camera_link_selftest();
     }
 
     if (err != ESP_OK) {
