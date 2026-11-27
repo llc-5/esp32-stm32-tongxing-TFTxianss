@@ -1,0 +1,41 @@
+# ---- 通用 ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.tmp
+*.bak
+*.log
+
+# ---- ESP-IDF 产物 ----
+esp32-s31-sender/build/
+esp32-s31-sender/build_stale_*/
+esp32-s31-sender/managed_components/
+esp32-s31-sender/sdkconfig.old
+*.bin
+*.elf
+*.map
+*.o
+*.a
+
+# ---- Keil / MDK 产物 ----
+stm32f103-receiver/Objects/
+stm32f103-receiver/Listings/
+stm32f103-receiver/DebugConfig/
+stm32f103-receiver/Project Backups/
+stm32f103-receiver/*.uvguix.*
+stm32f103-receiver/*.uvgui.*
+stm32f103-receiver/*.suo
+stm32f103-receiver/*.opt.bak
+stm32f103-receiver/*.uvproj.bak
+stm32f103-receiver/*.uvopt.bak
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- VS Code / 编辑器 ----
+.vscode/ipch/
+.ccls-cache/

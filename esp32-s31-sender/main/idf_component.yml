@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.4"
+  esp_video:
+    version: ">=2.6.0"
+  esp_cam_sensor:
+    version: ">=2.7.0"

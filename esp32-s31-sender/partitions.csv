@@ -1,0 +1,15 @@
+﻿# 分区表 —— ESP32-S31，Flash 实际 16MB
+#
+# 为什么要改默认的：默认 singleapp 只给 app 分区 1MB，放图片没问题，
+# 但视频数据动辄几个 MB，根本塞不下。这里把 factory 扩到 6MB。
+#
+# 布局：
+#   0x8000  分区表本身（1 扇区）
+#   0x9000  nvs        24KB
+#   0xf000  phy_init    4KB
+#   0x10000 factory     6MB   <- 你的程序 + 图片 + 视频都放这里
+#
+# Name,     Type, SubType,  Offset,  Size,     Flags
+nvs,        data, nvs,      ,        0x6000,
+phy_init,   data, phy,      ,        0x1000,
+factory,    app,  factory,  ,        0x600000,
